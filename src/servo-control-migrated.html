@@ -245,6 +245,18 @@
             margin-top: 20px;
         }
 
+        .button-group-five {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .button-group-five button:nth-child(4),
+        .button-group-five button:nth-child(5) {
+            grid-column: span 1;
+        }
+
         button {
             padding: 15px 20px;
             border: none;
@@ -283,6 +295,11 @@
 
         .btn-warning {
             background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            color: white;
+        }
+
+        .btn-sync {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
             color: white;
         }
 
@@ -420,6 +437,10 @@
                 grid-template-columns: 1fr;
             }
 
+            .button-group-five {
+                grid-template-columns: 1fr;
+            }
+
             .quick-increments {
                 grid-template-columns: repeat(2, 1fr);
             }
@@ -517,7 +538,7 @@
 
     <div class="section">
         <div class="section-title">System Controls</div>
-        <div class="button-group">
+        <div class="button-group-five">
             <button class="btn-stop" onclick="sendCommand('stop')">
                 ⏸️ Stop
             </button>
@@ -526,6 +547,9 @@
             </button>
             <button class="btn-warning" onclick="sendCommand('reset')">
                 🔄 Reset
+            </button>
+            <button class="btn-sync" onclick="syncAxes()">
+                🔗 Sync
             </button>
             <button class="btn-primary" onclick="getStatus()">
                 🔃 Refresh
@@ -548,13 +572,13 @@
 </div>
 
 <script>
-    // Version 4.0 - Dual axis support with X and Z axes (independent and synchronized control)
+    // Version 4.1 - Added Sync command support
     const BASE_URL = window.location.origin;
     let refreshInterval = null;
     let currentMode = 'absolute';
     let activeAxis = 'x'; // 'x', 'z', or 'both'
 
-    console.log('X-Z Axis Servo Control loaded - Version 4.0');
+    console.log('X-Z Axis Servo Control loaded - Version 4.1');
     console.log('Base URL:', BASE_URL);
 
     // Update the endpoint display
@@ -739,6 +763,26 @@
         }
     }
 
+    async function syncAxes() {
+        try {
+            const url = `${BASE_URL}/sync`;
+            console.log('Sync URL:', url);
+
+            showResponse('Syncing axes - waiting for all previous commands to complete...', true);
+
+            const response = await fetch(url);
+            const text = await response.text();
+
+            showResponse(`Sync complete: ${text}`, response.ok);
+
+            if (response.ok) {
+                setTimeout(getStatus, 300);
+            }
+        } catch (error) {
+            showResponse('Error syncing axes: ' + error.message, false);
+        }
+    }
+
     async function sendCommand(command) {
         try {
             let url;
@@ -890,6 +934,12 @@
         if (e.key === ' ') {
             e.preventDefault();
             sendCommand('stop');
+        }
+
+        // 'S' key to sync
+        if (e.key === 's' || e.key === 'S') {
+            e.preventDefault();
+            syncAxes();
         }
     });
 

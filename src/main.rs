@@ -305,6 +305,20 @@ fn parse_move_params(query: String) -> Result<(Option<AxisId>, i32, u32), String
     Ok(())
   })?;
 
+  let cmd_tx_sync = cmd_tx.clone();
+  server.fn_handler::<anyhow::Error, _>("/sync", Method::Get, move |req| {
+    let mut resp = req.into_ok_response()?;
+
+    // Send Sync command - it will be distributed to both axes
+    cmd_tx_sync.send(AxisCommand {
+      axis: AxisId::AxisX, // Doesn't matter, will be ignored
+      command: Command::Sync { id: None },
+    }).ok();
+
+    resp.write_all(b"Sync command sent to all axes")?;
+    Ok(())
+  })?;
+
   // Status endpoint
   let status_clone = status.clone();
   server.fn_handler::<anyhow::Error, _>("/status", Method::Get, move |req| {

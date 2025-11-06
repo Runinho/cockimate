@@ -34,6 +34,7 @@ pub enum Command {
   Resume,
   Reset,
   Wait { time_ms: u64 },
+  Sync { id: Option<u32> },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -164,6 +165,21 @@ impl AxisState {
   }
 }
 
+// Global synchronization state shared between axes
+struct SyncState {
+  next_sync_id: u32,              // The next sync ID to assign
+  axes_at_sync: [Option<u32>; 2], // Which sync_id each axis is waiting at (None if not waiting)
+}
+
+impl SyncState {
+  fn new() -> Self {
+    Self {
+      next_sync_id: 0,
+      axes_at_sync: [None, None],
+    }
+  }
+}
+
 pub fn axis_thread(
   mut axis0: Axis,
   mut axis1: Axis,
@@ -200,6 +216,11 @@ pub fn axis_thread(
   let mut active_axis: Option<AxisId> = None;
   let mut loop_count = 0u64;
 
+  let mut sync_id = 0;
+
+  // Create shared sync state
+  let sync_state = Arc::new(Mutex::new(SyncState::new()));
+
   loop {
     unsafe {
       esp_idf_sys::esp_task_wdt_reset();
@@ -214,29 +235,54 @@ pub fn axis_thread(
         Ok(axis_cmd) => {
           println!(">>> Received command: {:?}", axis_cmd);
 
-          let axis_state = match axis_cmd.axis {
-            AxisId::AxisX => &mut axis_state0,
-            AxisId::AxisZ => &mut axis_state1,
-          };
+          if let Command::Sync {id} = &axis_cmd.command {
 
-          match axis_cmd.command {
-            Command::Stop => {
-              axis_state.state = State::Paused;
-            }
-            Command::Resume => {
-              axis_state.state = State::Running;
-            }
-            Command::Reset => {
-              axis_state.command_buffer.clear();
-              axis_state.current = None;
-            }
-            Command::MoveTo { position, speed } => {
-              println!("[{:?}]   -> Adding MoveTo to buffer: pos={}, speed={}", axis_cmd.axis, position, speed);
-              axis_state.command_buffer.push_back(axis_cmd.command);
-            }
-            Command::Wait { time_ms } => {
-              println!("[{:?}]   -> Adding Wait to buffer: time_ms={}", axis_cmd.axis, time_ms);
-              axis_state.command_buffer.push_back(axis_cmd.command);
+            axis_state0.command_buffer.push_back(Command::Sync {id: Some(sync_id) });
+            axis_state1.command_buffer.push_back(Command::Sync {id: Some(sync_id) });
+            sync_id += 1;
+
+          } else {
+            let axis_state = match axis_cmd.axis {
+              AxisId::AxisX => &mut axis_state0,
+              AxisId::AxisZ => &mut axis_state1,
+            };
+
+            match axis_cmd.command {
+              Command::Stop => {
+                axis_state.state = State::Paused;
+              }
+              Command::Resume => {
+                axis_state.state = State::Running;
+              }
+              Command::Reset => {
+                axis_state.command_buffer.clear();
+                axis_state.current = None;
+
+                // Handle sync state on reset
+                let mut sync_guard = sync_state.lock().unwrap();
+                let axis_idx = axis_cmd.axis.as_usize();
+
+                // If this axis was at a sync, increment next_sync_id to invalidate it
+                if sync_guard.axes_at_sync[axis_idx].is_some() {
+                  println!("[{:?}] === Reset while at sync - invalidating sync_id={}",
+                           axis_cmd.axis, sync_guard.next_sync_id);
+                  sync_guard.next_sync_id += 1;
+                }
+
+                // Clear all axes from sync (invalidated now)
+                sync_guard.axes_at_sync = [None, None];
+              }
+              Command::MoveTo { position, speed } => {
+                println!("[{:?}]   -> Adding MoveTo to buffer: pos={}, speed={}", axis_cmd.axis, position, speed);
+                axis_state.command_buffer.push_back(axis_cmd.command);
+              }
+              Command::Wait { time_ms } => {
+                println!("[{:?}]   -> Adding Wait to buffer: time_ms={}", axis_cmd.axis, time_ms);
+                axis_state.command_buffer.push_back(axis_cmd.command);
+              },
+              Command::Sync{id} => {
+                panic!("can never happen because handeld in case above")
+              }
             }
           }
         }
@@ -260,6 +306,7 @@ pub fn axis_thread(
       &mut axis_state0,
       &mut active_axis,
       current_time,
+      sync_state.clone(),
     );
 
     let time_to_next_pulse_1 = process_axis_commands(
@@ -267,6 +314,7 @@ pub fn axis_thread(
       &mut axis_state1,
       &mut active_axis,
       current_time,
+      sync_state.clone(),
     );
 
     // Determine which axis needs to pulse next and sort by time
@@ -326,6 +374,7 @@ fn process_axis_commands(
   axis_state: &mut AxisState,
   active_axis: &mut Option<AxisId>,
   current_time: u64,
+  sync_state: Arc<Mutex<SyncState>>,
 ) -> Option<u64> {
   // If paused, disable and return
   if axis_state.state == State::Paused {
@@ -340,6 +389,7 @@ fn process_axis_commands(
       println!("[{:?}] <<< Popped command from buffer: {:?}", axis.id, axis_state.current);
     }
   }
+
   // Process current command
   if let Some(cmd) = &axis_state.current {
     match cmd {
@@ -357,6 +407,44 @@ fn process_axis_commands(
           println!("[{:?}] === Starting wait for {} ms", axis.id, time_ms);
           axis_state.state = State::Waiting { wait_start: Instant::now() };
         }
+        return None;
+      }
+      Command::Sync {id} => {
+        // Reset to Running state if we were waiting
+        if matches!(axis_state.state, State::Waiting { .. }) {
+          axis_state.state = State::Running;
+        }
+
+        let mut sync_guard = sync_state.lock().unwrap();
+        let axis_idx = axis.id.as_usize();
+        let sync_id = id.unwrap();
+
+        // NEW: Check if this sync has been invalidated
+        if sync_id < sync_guard.next_sync_id {
+          println!("[{:?}] === Skipping outdated sync_id={} (next_sync_id={})",
+                   axis.id, sync_id, sync_guard.next_sync_id);
+          axis_state.current = None; // Skip this sync command
+          return None;
+        }
+
+        // First time seeing this Sync command?
+        if sync_guard.axes_at_sync[axis_idx].is_none() {
+          sync_guard.axes_at_sync[axis_idx] = Some(sync_id);
+          println!("[{:?}] === Waiting at sync_id={}", axis.id, sync_id);
+        }
+
+        // Check if both axes are at the same sync point
+        let this_sync = sync_guard.axes_at_sync[axis_idx];
+        let all_synced = sync_guard.axes_at_sync.iter()
+            .all(|&s| s.is_some() && s == this_sync);
+
+        if all_synced {
+          println!("=== All axes synchronized at sync_id={:?}", this_sync);
+          sync_guard.next_sync_id += 1;
+          sync_guard.axes_at_sync = [None, None];
+          axis_state.current = None;
+        }
+
         return None;
       }
       Command::MoveTo { position, speed } => {
@@ -466,7 +554,6 @@ fn execute_pulse(
   // Record pulse time
   axis_state.last_pulse_time = current_time;
 
-  println!("[{:?}] Pulse executed, pos={}, target={}, speed={}",
-           axis.id, axis.position, axis.target, axis.speed);
+  // println!("[{:?}] Pulse executed, pos={}, target={}, speed={}",
+  //          axis.id, axis.position, axis.target, axis.speed);
 }
-
