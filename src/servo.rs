@@ -7,16 +7,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use esp_idf_svc::hal::delay::FreeRtos;
+use serde::{Deserialize, Serialize};
 
 const STEP_PULSE_US: u64 = 10;
 const MIN_SPEED: i32 = 10;
-
-// Enum to identify which axis
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum AxisId {
-  AxisX,
-  AxisZ,
-}
 
 impl AxisId {
   fn as_usize(&self) -> usize {
@@ -27,21 +21,36 @@ impl AxisId {
   }
 }
 
-#[derive(Clone, Copy, Debug)]
+// Add Deserialize to your existing enums/structs
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum Command {
+  #[serde(rename = "moveto")]
   MoveTo { position: i32, speed: i32 },
-  Home { direction: i32, speed: i32 }, // direction: 1 for forward, -1 for backward
+  Home { direction: i32, speed: i32 },
   Stop,
   Resume,
   Reset,
+  #[serde(rename = "wait")]
   Wait { time_ms: u64 },
   Sync { id: Option<u32> },
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct AxisCommand {
-  pub axis: AxisId,
+  #[serde(default)]
+  pub axis: Option<AxisId>,
+  #[serde(flatten)]
   pub command: Command,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AxisId {
+  #[serde(rename = "x")]
+  AxisX,
+  #[serde(rename = "z")]
+  AxisZ,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -247,7 +256,7 @@ pub fn axis_thread(
     // Handle incoming commands (non-blocking) and route to appropriate axis
     loop {
       match cmd_rx.try_recv() {
-        Ok(axis_cmd) => {
+        Ok(mut axis_cmd) => {
           println!(">>> Received command: {:?}", axis_cmd);
 
           if let Command::Sync {id} = &axis_cmd.command {
@@ -258,8 +267,13 @@ pub fn axis_thread(
 
           } else {
             let axis_state = match axis_cmd.axis {
-              AxisId::AxisX => &mut axis_state0,
-              AxisId::AxisZ => &mut axis_state1,
+              Some(AxisId::AxisX) => &mut axis_state0,
+              Some(AxisId::AxisZ) => &mut axis_state1,
+              None => {
+                // TODO: we should apply that to both axis!
+                axis_cmd.axis = Some(AxisId::AxisX);
+                &mut axis_state0
+              }
             };
 
             match axis_cmd.command {
@@ -275,7 +289,7 @@ pub fn axis_thread(
 
                 // Handle sync state on reset
                 let mut sync_guard = sync_state.lock().unwrap();
-                let axis_idx = axis_cmd.axis.as_usize();
+                let axis_idx = axis_cmd.axis.expect("None not supported for command").as_usize();
 
                 // If this axis was at a sync, increment next_sync_id to invalidate it
                 if sync_guard.axes_at_sync[axis_idx].is_some() {

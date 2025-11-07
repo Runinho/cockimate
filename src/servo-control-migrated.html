@@ -45,7 +45,7 @@
 
         .axis-tabs {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 10px;
             margin-bottom: 25px;
         }
@@ -82,6 +82,14 @@
             background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
         }
 
+        .axis-tab.script {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }
+
+        .axis-tab.script.active {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
         .section {
             margin-bottom: 30px;
         }
@@ -104,7 +112,7 @@
             font-weight: 500;
         }
 
-        input[type="number"] {
+        input[type="number"], input[type="text"] {
             width: 100%;
             padding: 12px;
             border: 2px solid #e0e0e0;
@@ -113,7 +121,7 @@
             transition: border-color 0.3s;
         }
 
-        input[type="number"]:focus {
+        input[type="number"]:focus, input[type="text"]:focus {
             outline: none;
             border-color: #667eea;
         }
@@ -434,6 +442,156 @@
             border-color: transparent;
         }
 
+        /* Scripting Interface Styles */
+        .script-editor {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .script-editor textarea {
+            width: 100%;
+            min-height: 300px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        .script-editor textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .script-controls {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .script-list {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .script-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            margin-bottom: 10px;
+            background: white;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+            transition: all 0.3s;
+        }
+
+        .script-item:hover {
+            border-color: #667eea;
+        }
+
+        .script-item-name {
+            font-weight: 600;
+            color: #333;
+            flex: 1;
+        }
+
+        .script-item-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-small {
+            padding: 8px 15px;
+            font-size: 13px;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .btn-delete {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
+        .btn-load {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+
+        .btn-execute {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+
+        .script-builder {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .command-builder {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 2px solid #e0e0e0;
+        }
+
+        .builder-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .info-box {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #856404;
+        }
+
+        .command-preview {
+            background: #e8f4f8;
+            border: 2px solid #4facfe;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
         @media (max-width: 600px) {
             .container {
                 padding: 25px;
@@ -462,6 +620,14 @@
             .mode-toggle {
                 grid-template-columns: 1fr;
             }
+
+            .script-controls {
+                grid-template-columns: 1fr;
+            }
+
+            .builder-row {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -472,19 +638,23 @@
 
     <div class="section">
         <div class="axis-tabs">
-            <button class="axis-tab active" onclick="setActiveAxis('x')">
+            <button class="axis-tab active" onclick="setActiveView('x')">
                 📍 X-Axis
             </button>
-            <button class="axis-tab" onclick="setActiveAxis('z')">
+            <button class="axis-tab" onclick="setActiveView('z')">
                 📍 Z-Axis
             </button>
-            <button class="axis-tab both" onclick="setActiveAxis('both')">
+            <button class="axis-tab both" onclick="setActiveView('both')">
                 🔗 Both Axes
+            </button>
+            <button class="axis-tab script" onclick="setActiveView('script')">
+                📜 Scripting
             </button>
         </div>
     </div>
 
-    <div class="section">
+    <!-- Position Display (shown for all except script view) -->
+    <div class="section" id="positionDisplay">
         <div class="dual-position-display">
             <div class="axis-position-card">
                 <div class="label">X-Axis Position</div>
@@ -497,125 +667,262 @@
         </div>
     </div>
 
-    <div class="section">
-        <div class="section-title">Control Mode</div>
-        <div class="mode-toggle">
-            <button class="mode-btn active" id="absoluteBtn" onclick="setMode('absolute')">
-                📍 Absolute Position
-            </button>
-            <button class="mode-btn" id="incrementBtn" onclick="setMode('increment')">
-                ↔️ Incremental Move
-            </button>
-            <button class="mode-btn" id="homeBtn" onclick="setMode('home')">
-                🏠 Homing
-            </button>
-        </div>
-    </div>
-
-    <div class="section" id="absoluteSection">
-        <div class="section-title">Move To Absolute Position</div>
-        <div class="control-group">
-            <label for="position">Target Position</label>
-            <input type="number" id="position" placeholder="Enter target position" step="1">
-        </div>
-        <div class="control-group">
-            <label for="speed">Speed</label>
-            <input type="number" id="speed" placeholder="Enter speed" step="100" value="1400">
-        </div>
-        <button class="btn-primary" onclick="moveTo()" style="width: 100%;">
-            ➤ Move To Position
-        </button>
-    </div>
-
-    <div class="section" id="incrementSection" style="display: none;">
-        <div class="section-title">Incremental Movement</div>
-        <div class="control-group">
-            <label for="incrementSize">Step Size</label>
-            <input type="number" id="incrementSize" value="500" step="100" min="1" onchange="updateIncrementDisplay()">
-        </div>
-        <div class="control-group">
-            <label for="incrementSpeed">Speed</label>
-            <input type="number" id="incrementSpeed" value="1400" step="100" min="1">
-        </div>
-        <div class="increment-controls">
-            <button class="btn-increment large" onclick="moveIncrement(-1)">
-                ← <span id="decrementValue">500</span>
-            </button>
-            <button class="btn-increment large" onclick="moveIncrement(1)">
-                <span id="incrementValue">500</span> →
-            </button>
-        </div>
-        <div class="quick-increments">
-            <button class="btn-increment small" onclick="moveByAmount(-100)">← 100</button>
-            <button class="btn-increment small" onclick="moveByAmount(-50)">← 50</button>
-            <button class="btn-increment small" onclick="moveByAmount(50)">50 →</button>
-            <button class="btn-increment small" onclick="moveByAmount(100)">100 →</button>
-        </div>
-        <div class="speed-label">Quick Speed Moves (using step size above):</div>
-        <div class="quick-speeds">
-            <button class="btn-speed full" onclick="quickMove(-1, 'full')">← Full</button>
-            <button class="btn-speed half" onclick="quickMove(-1, 'half')">← Half</button>
-            <button class="btn-speed quarter" onclick="quickMove(-1, 'quarter')">← 1/4</button>
-            <button class="btn-speed quarter" onclick="quickMove(1, 'quarter')">1/4 →</button>
-            <button class="btn-speed half" onclick="quickMove(1, 'half')">Half →</button>
-            <button class="btn-speed full" onclick="quickMove(1, 'full')">Full →</button>
-        </div>
-    </div>
-
-    <div class="section" id="homeSection" style="display: none;">
-        <div class="section-title">Homing Sequence</div>
-        <div class="control-group">
-            <label>Homing Direction</label>
-            <div class="direction-toggle">
-                <button class="direction-btn active" id="dirPositiveBtn" onclick="setHomeDirection(1)">
-                    ➕ Positive Direction
+    <!-- Manual Control Sections -->
+    <div id="manualControl">
+        <div class="section">
+            <div class="section-title">Control Mode</div>
+            <div class="mode-toggle">
+                <button class="mode-btn active" id="absoluteBtn" onclick="setMode('absolute')">
+                    📍 Absolute Position
                 </button>
-                <button class="direction-btn" id="dirNegativeBtn" onclick="setHomeDirection(-1)">
-                    ➖ Negative Direction
+                <button class="mode-btn" id="incrementBtn" onclick="setMode('increment')">
+                    ↔️ Incremental Move
+                </button>
+                <button class="mode-btn" id="homeBtn" onclick="setMode('home')">
+                    🏠 Homing
                 </button>
             </div>
         </div>
-        <div class="control-group">
-            <label for="homeSpeed">Homing Speed</label>
-            <input type="number" id="homeSpeed" placeholder="Enter homing speed" step="100" value="800" min="1">
+
+        <div class="section" id="absoluteSection">
+            <div class="section-title">Move To Absolute Position</div>
+            <div class="control-group">
+                <label for="position">Target Position</label>
+                <input type="number" id="position" placeholder="Enter target position" step="1">
+            </div>
+            <div class="control-group">
+                <label for="speed">Speed</label>
+                <input type="number" id="speed" placeholder="Enter speed" step="100" value="1400">
+            </div>
+            <button class="btn-primary" onclick="moveTo()" style="width: 100%;">
+                ➤ Move To Position
+            </button>
         </div>
-        <button class="btn-home" onclick="startHoming()" style="width: 100%;">
-            🏠 Start Homing
-        </button>
-        <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-radius: 8px; font-size: 14px; color: #856404;">
-            <strong>⚠️ Note:</strong> Homing will move the axis until it reaches the limit switch. Ensure the path is clear before starting.
+
+        <div class="section" id="incrementSection" style="display: none;">
+            <div class="section-title">Incremental Movement</div>
+            <div class="control-group">
+                <label for="incrementSize">Step Size</label>
+                <input type="number" id="incrementSize" value="500" step="100" min="1" onchange="updateIncrementDisplay()">
+            </div>
+            <div class="control-group">
+                <label for="incrementSpeed">Speed</label>
+                <input type="number" id="incrementSpeed" value="1400" step="100" min="1">
+            </div>
+            <div class="increment-controls">
+                <button class="btn-increment large" onclick="moveIncrement(-1)">
+                    ← <span id="decrementValue">500</span>
+                </button>
+                <button class="btn-increment large" onclick="moveIncrement(1)">
+                    <span id="incrementValue">500</span> →
+                </button>
+            </div>
+            <div class="quick-increments">
+                <button class="btn-increment small" onclick="moveByAmount(-100)">← 100</button>
+                <button class="btn-increment small" onclick="moveByAmount(-50)">← 50</button>
+                <button class="btn-increment small" onclick="moveByAmount(50)">50 →</button>
+                <button class="btn-increment small" onclick="moveByAmount(100)">100 →</button>
+            </div>
+            <div class="speed-label">Quick Speed Moves (using step size above):</div>
+            <div class="quick-speeds">
+                <button class="btn-speed full" onclick="quickMove(-1, 'full')">← Full</button>
+                <button class="btn-speed half" onclick="quickMove(-1, 'half')">← Half</button>
+                <button class="btn-speed quarter" onclick="quickMove(-1, 'quarter')">← 1/4</button>
+                <button class="btn-speed quarter" onclick="quickMove(1, 'quarter')">1/4 →</button>
+                <button class="btn-speed half" onclick="quickMove(1, 'half')">Half →</button>
+                <button class="btn-speed full" onclick="quickMove(1, 'full')">Full →</button>
+            </div>
+        </div>
+
+        <div class="section" id="homeSection" style="display: none;">
+            <div class="section-title">Homing Sequence</div>
+            <div class="control-group">
+                <label>Homing Direction</label>
+                <div class="direction-toggle">
+                    <button class="direction-btn active" id="dirPositiveBtn" onclick="setHomeDirection(1)">
+                        ➕ Positive Direction
+                    </button>
+                    <button class="direction-btn" id="dirNegativeBtn" onclick="setHomeDirection(-1)">
+                        ➖ Negative Direction
+                    </button>
+                </div>
+            </div>
+            <div class="control-group">
+                <label for="homeSpeed">Homing Speed</label>
+                <input type="number" id="homeSpeed" placeholder="Enter homing speed" step="100" value="800" min="1">
+            </div>
+            <button class="btn-home" onclick="startHoming()" style="width: 100%;">
+                🏠 Start Homing
+            </button>
+            <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-radius: 8px; font-size: 14px; color: #856404;">
+                <strong>⚠️ Note:</strong> Homing will move the axis until it reaches the limit switch. Ensure the path is clear before starting.
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">System Controls</div>
+            <div class="button-group-five">
+                <button class="btn-stop" onclick="sendCommand('stop')">
+                    ⏸️ Stop
+                </button>
+                <button class="btn-success" onclick="sendCommand('resume')">
+                    ▶️ Resume
+                </button>
+                <button class="btn-warning" onclick="sendCommand('reset')">
+                    🔄 Reset
+                </button>
+                <button class="btn-sync" onclick="syncAxes()">
+                    🔗 Sync
+                </button>
+                <button class="btn-primary" onclick="getStatus()">
+                    🔃 Refresh
+                </button>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Status Details</div>
+            <div class="status-display" id="statusDisplay">
+                <!-- Status will be dynamically updated -->
+            </div>
+            <div class="auto-refresh">
+                <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()">
+                <label for="autoRefresh" style="margin: 0;">Auto-refresh every 1 second</label>
+            </div>
         </div>
     </div>
 
-    <div class="section">
-        <div class="section-title">System Controls</div>
-        <div class="button-group-five">
-            <button class="btn-stop" onclick="sendCommand('stop')">
-                ⏸️ Stop
-            </button>
-            <button class="btn-success" onclick="sendCommand('resume')">
-                ▶️ Resume
-            </button>
-            <button class="btn-warning" onclick="sendCommand('reset')">
-                🔄 Reset
-            </button>
-            <button class="btn-sync" onclick="syncAxes()">
-                🔗 Sync
-            </button>
-            <button class="btn-primary" onclick="getStatus()">
-                🔃 Refresh
-            </button>
-        </div>
-    </div>
+    <!-- Scripting Section -->
+    <div id="scriptingControl" style="display: none;">
+        <div class="section">
+            <div class="section-title">📝 Visual Script Builder</div>
+            <div class="info-box">
+                <strong>💡 Quick Start:</strong> Use the builder below to create commands, or write JSON directly in the editor.
+            </div>
 
-    <div class="section">
-        <div class="section-title">Status Details</div>
-        <div class="status-display" id="statusDisplay">
-            <!-- Status will be dynamically updated -->
+            <div class="script-builder">
+                <div class="command-builder">
+                    <div class="builder-row">
+                        <div>
+                            <label style="margin-bottom: 5px; font-size: 13px;">Command Type</label>
+                            <select id="cmdType" onchange="updateBuilderFields()">
+                                <option value="moveto">Move To</option>
+                                <option value="home">Home</option>
+                                <option value="wait">Wait</option>
+                                <option value="sync">Sync</option>
+                                <option value="stop">Stop</option>
+                                <option value="resume">Resume</option>
+                                <option value="reset">Reset</option>
+                            </select>
+                        </div>
+                        <div id="axisField">
+                            <label style="margin-bottom: 5px; font-size: 13px;">Axis (optional)</label>
+                            <select id="cmdAxis">
+                                <option value="">Both Axes</option>
+                                <option value="x">X-Axis</option>
+                                <option value="z">Z-Axis</option>
+                            </select>
+                        </div>
+                        <div id="positionField">
+                            <label style="margin-bottom: 5px; font-size: 13px;">Position</label>
+                            <input type="number" id="cmdPosition" value="1000" step="100">
+                        </div>
+                    </div>
+                    <div class="builder-row">
+                        <div id="speedField">
+                            <label style="margin-bottom: 5px; font-size: 13px;">Speed</label>
+                            <input type="number" id="cmdSpeed" value="1400" step="100">
+                        </div>
+                        <div id="directionField" style="display: none;">
+                            <label style="margin-bottom: 5px; font-size: 13px;">Direction</label>
+                            <select id="cmdDirection">
+                                <option value="1">Positive (+)</option>
+                                <option value="-1">Negative (-)</option>
+                            </select>
+                        </div>
+                        <div id="waitField" style="display: none;">
+                            <label style="margin-bottom: 5px; font-size: 13px;">Wait Time (ms)</label>
+                            <input type="number" id="cmdWaitTime" value="1000" step="100" min="0">
+                        </div>
+                        <div id="syncField" style="display: none;">
+                            <label style="margin-bottom: 5px; font-size: 13px;">Sync ID (optional)</label>
+                            <input type="number" id="cmdSyncId" placeholder="Leave empty for none">
+                        </div>
+                        <div style="display: flex; align-items: flex-end;">
+                            <button class="btn-success" onclick="addCommandToScript()" style="width: 100%; margin: 0;">
+                                ➕ Add Command
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="command-preview" id="commandPreview">
+                    // Commands will appear here
+                </div>
+            </div>
         </div>
-        <div class="auto-refresh">
-            <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()">
-            <label for="autoRefresh" style="margin: 0;">Auto-refresh every 1 second</label>
+
+        <div class="section">
+            <div class="section-title">📋 Script Editor</div>
+            <div class="script-editor">
+                <textarea id="scriptEditor" placeholder='Enter script JSON here...
+
+Example:
+{
+  "commands": [
+    {
+      "axis": "x",
+      "type": "moveto",
+      "position": 1000,
+      "speed": 500
+    },
+    {
+      "type": "wait",
+      "time_ms": 2000
+    },
+    {
+      "axis": "z",
+      "type": "home",
+      "direction": -1,
+      "speed": 300
+    }
+  ]
+}'></textarea>
+            </div>
+            <div class="script-controls">
+                <button class="btn-primary" onclick="executeScript()">
+                    ▶️ Execute Script
+                </button>
+                <button class="btn-warning" onclick="validateScript()">
+                    ✓ Validate JSON
+                </button>
+                <button class="btn-success" onclick="showSaveDialog()">
+                    💾 Save Script
+                </button>
+                <button class="btn-warning" onclick="clearScript()">
+                    🗑️ Clear Editor
+                </button>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">💾 Saved Scripts</div>
+            <div class="script-list" id="scriptList">
+                <!-- Saved scripts will appear here -->
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">📖 Script Format Guide</div>
+            <div class="info-box">
+                <strong>Command Types:</strong><br>
+                • <strong>moveto</strong>: Move to position (requires: position, speed, optional: axis)<br>
+                • <strong>home</strong>: Home the axis (requires: direction, speed, optional: axis)<br>
+                • <strong>wait</strong>: Pause execution (requires: time_ms)<br>
+                • <strong>sync</strong>: Wait for all commands to complete (optional: id)<br>
+                • <strong>stop</strong>: Stop movement (optional: axis)<br>
+                • <strong>resume</strong>: Resume movement (optional: axis)<br>
+                • <strong>reset</strong>: Reset controller (optional: axis)
+            </div>
         </div>
     </div>
 
@@ -623,18 +930,21 @@
 </div>
 
 <script>
-    // Version 5.1 - Always show both axes positions
+    // Version 6.0 - Scripting Support with localStorage
     const BASE_URL = window.location.origin;
     let refreshInterval = null;
     let currentMode = 'absolute';
     let activeAxis = 'x'; // 'x', 'z', or 'both'
-    let homeDirection = 1; // 1 for positive, -1 for negative
+    let activeView = 'x'; // 'x', 'z', 'both', or 'script'
+    let homeDirection = 1;
+    let scriptCommands = [];
 
-    console.log('X-Z Axis Servo Control loaded - Version 5.1');
+    console.log('X-Z Axis Servo Control with Scripting - Version 6.0');
     console.log('Base URL:', BASE_URL);
 
-    // Update the endpoint display
     document.getElementById('baseUrl').textContent = BASE_URL;
+
+    // ==================== UI Helper Functions ====================
 
     function showResponse(message, isSuccess = true) {
         const responseDiv = document.getElementById('response');
@@ -646,24 +956,45 @@
         }, 5000);
     }
 
-    function setActiveAxis(axis) {
-        activeAxis = axis;
+    function setActiveView(view) {
+        activeView = view;
+
+        if (view === 'script') {
+            activeAxis = 'both'; // Default for scripting
+        } else {
+            activeAxis = view;
+        }
 
         // Update tab styling
         const tabs = document.querySelectorAll('.axis-tab');
-        tabs.forEach((tab, index) => {
-            tab.classList.remove('active');
-        });
+        tabs.forEach(tab => tab.classList.remove('active'));
 
-        if (axis === 'x') {
+        if (view === 'x') {
             tabs[0].classList.add('active');
-        } else if (axis === 'z') {
+        } else if (view === 'z') {
             tabs[1].classList.add('active');
-        } else {
+        } else if (view === 'both') {
             tabs[2].classList.add('active');
+        } else if (view === 'script') {
+            tabs[3].classList.add('active');
         }
 
-        getStatus();
+        // Show/hide sections
+        const manualControl = document.getElementById('manualControl');
+        const scriptingControl = document.getElementById('scriptingControl');
+        const positionDisplay = document.getElementById('positionDisplay');
+
+        if (view === 'script') {
+            manualControl.style.display = 'none';
+            scriptingControl.style.display = 'block';
+            positionDisplay.style.display = 'none';
+            loadSavedScripts();
+        } else {
+            manualControl.style.display = 'block';
+            scriptingControl.style.display = 'none';
+            positionDisplay.style.display = 'block';
+            getStatus();
+        }
     }
 
     function setMode(mode) {
@@ -675,12 +1006,10 @@
         const incrementSection = document.getElementById('incrementSection');
         const homeSection = document.getElementById('homeSection');
 
-        // Reset all buttons
         absoluteBtn.classList.remove('active');
         incrementBtn.classList.remove('active');
         homeBtn.classList.remove('active');
 
-        // Hide all sections
         absoluteSection.style.display = 'none';
         incrementSection.style.display = 'none';
         homeSection.style.display = 'none';
@@ -717,6 +1046,8 @@
         document.getElementById('decrementValue').textContent = incrementSize;
     }
 
+    // ==================== Manual Control Functions ====================
+
     async function startHoming() {
         const speed = document.getElementById('homeSpeed').value;
 
@@ -728,10 +1059,8 @@
         try {
             let url;
             if (activeAxis === 'both') {
-                // Home both axes
                 url = `${BASE_URL}/home?direction=${homeDirection}&speed=${speed}`;
             } else {
-                // Home specific axis
                 url = `${BASE_URL}/home?axis=${activeAxis}&direction=${homeDirection}&speed=${speed}`;
             }
 
@@ -763,10 +1092,8 @@
         try {
             let url;
             if (activeAxis === 'both') {
-                // Move both axes to the same position
                 url = `${BASE_URL}/moveto?position=${position}&speed=${speed}`;
             } else {
-                // Move specific axis (x or z)
                 url = `${BASE_URL}/moveto?axis=${activeAxis}&position=${position}&speed=${speed}`;
             }
 
@@ -811,7 +1138,6 @@
 
     async function moveByAmountWithSpeed(amount, speed) {
         try {
-            // Get current position first
             const statusResponse = await fetch(`${BASE_URL}/status`);
             const statusText = await statusResponse.text();
             const statusData = JSON.parse(statusText);
@@ -820,13 +1146,11 @@
             let message;
 
             if (activeAxis === 'both') {
-                // Move both axes by the same amount
                 const newPosX = statusData.axis0.position + amount;
                 const newPosZ = statusData.axis1.position + amount;
                 url = `${BASE_URL}/moveto?position=${newPosX}&speed=${speed}`;
                 message = `Both axes moving ${amount > 0 ? '+' : ''}${amount} (X→${newPosX}, Z→${newPosZ}) @ speed ${speed}`;
             } else {
-                // Move specific axis (map x to axis0, z to axis1)
                 const axisData = activeAxis === 'x' ? statusData.axis0 : statusData.axis1;
                 const currentPos = axisData.position;
                 const newPosition = currentPos + amount;
@@ -870,10 +1194,8 @@
         try {
             let url;
             if (activeAxis === 'both') {
-                // Command both axes
                 url = `${BASE_URL}/${command}`;
             } else {
-                // Command specific axis
                 url = `${BASE_URL}/${command}?axis=${activeAxis}`;
             }
 
@@ -895,11 +1217,9 @@
             const text = await response.text();
             const data = JSON.parse(text);
 
-            // Always update both position displays
             document.getElementById('axisXPosition').textContent = data.axis0.position;
             document.getElementById('axisZPosition').textContent = data.axis1.position;
 
-            // Update status display based on selected axis
             const statusDiv = document.getElementById('statusDisplay');
 
             if (activeAxis === 'both') {
@@ -977,11 +1297,301 @@
         }
     }
 
-    // Keyboard shortcuts
+    // ==================== Scripting Functions ====================
+
+    function updateBuilderFields() {
+        const cmdType = document.getElementById('cmdType').value;
+
+        // Hide all optional fields first
+        document.getElementById('axisField').style.display = 'block';
+        document.getElementById('positionField').style.display = 'none';
+        document.getElementById('speedField').style.display = 'none';
+        document.getElementById('directionField').style.display = 'none';
+        document.getElementById('waitField').style.display = 'none';
+        document.getElementById('syncField').style.display = 'none';
+
+        // Show relevant fields based on command type
+        switch(cmdType) {
+            case 'moveto':
+                document.getElementById('positionField').style.display = 'block';
+                document.getElementById('speedField').style.display = 'block';
+                break;
+            case 'home':
+                document.getElementById('directionField').style.display = 'block';
+                document.getElementById('speedField').style.display = 'block';
+                break;
+            case 'wait':
+                document.getElementById('axisField').style.display = 'none';
+                document.getElementById('waitField').style.display = 'block';
+                break;
+            case 'sync':
+                document.getElementById('axisField').style.display = 'none';
+                document.getElementById('syncField').style.display = 'block';
+                break;
+            case 'stop':
+            case 'resume':
+            case 'reset':
+                // Only axis field is needed
+                break;
+        }
+    }
+
+    function addCommandToScript() {
+        const cmdType = document.getElementById('cmdType').value;
+        const cmdAxis = document.getElementById('cmdAxis').value;
+
+        let command = { type: cmdType };
+
+        // Add axis if specified
+        if (cmdAxis) {
+            command.axis = cmdAxis;
+        }
+
+        // Add type-specific fields
+        switch(cmdType) {
+            case 'moveto':
+                command.position = parseInt(document.getElementById('cmdPosition').value);
+                command.speed = parseInt(document.getElementById('cmdSpeed').value);
+                break;
+            case 'home':
+                command.direction = parseInt(document.getElementById('cmdDirection').value);
+                command.speed = parseInt(document.getElementById('cmdSpeed').value);
+                break;
+            case 'wait':
+                command.time_ms = parseInt(document.getElementById('cmdWaitTime').value);
+                break;
+            case 'sync':
+                const syncId = document.getElementById('cmdSyncId').value;
+                if (syncId) {
+                    command.id = parseInt(syncId);
+                }
+                break;
+        }
+
+        scriptCommands.push(command);
+        updateCommandPreview();
+        updateScriptEditor();
+        showResponse(`Added ${cmdType} command to script`, true);
+    }
+
+    function updateCommandPreview() {
+        const preview = document.getElementById('commandPreview');
+        if (scriptCommands.length === 0) {
+            preview.textContent = '// Commands will appear here';
+        } else {
+            preview.textContent = JSON.stringify({ commands: scriptCommands }, null, 2);
+        }
+    }
+
+    function updateScriptEditor() {
+        const editor = document.getElementById('scriptEditor');
+        if (scriptCommands.length > 0) {
+            editor.value = JSON.stringify({ commands: scriptCommands }, null, 2);
+        }
+    }
+
+    function clearScript() {
+        if (confirm('Clear the script editor?')) {
+            scriptCommands = [];
+            document.getElementById('scriptEditor').value = '';
+            updateCommandPreview();
+            showResponse('Script editor cleared', true);
+        }
+    }
+
+    function validateScript() {
+        const editor = document.getElementById('scriptEditor');
+        try {
+            const script = JSON.parse(editor.value);
+            if (!script.commands || !Array.isArray(script.commands)) {
+                throw new Error('Script must have a "commands" array');
+            }
+            showResponse(`✓ Valid JSON with ${script.commands.length} commands`, true);
+            scriptCommands = script.commands;
+            updateCommandPreview();
+        } catch (error) {
+            showResponse('Invalid JSON: ' + error.message, false);
+        }
+    }
+
+    async function executeScript() {
+        const editor = document.getElementById('scriptEditor');
+
+        try {
+            const script = JSON.parse(editor.value);
+
+            if (!script.commands || !Array.isArray(script.commands)) {
+                throw new Error('Script must have a "commands" array');
+            }
+
+            showResponse(`Executing script with ${script.commands.length} commands...`, true);
+
+            const response = await fetch(`${BASE_URL}/script`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(script)
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                showResponse(`✓ Script executed: ${result.commands_queued} commands queued`, true);
+            } else {
+                showResponse(`Script error: ${result.message}`, false);
+            }
+
+        } catch (error) {
+            showResponse('Error executing script: ' + error.message, false);
+        }
+    }
+
+    // ==================== LocalStorage Functions ====================
+
+    function showSaveDialog() {
+        const editor = document.getElementById('scriptEditor');
+
+        try {
+            // Validate before saving
+            const script = JSON.parse(editor.value);
+            if (!script.commands || !Array.isArray(script.commands)) {
+                throw new Error('Script must have a "commands" array');
+            }
+
+            const name = prompt('Enter a name for this script:');
+            if (name) {
+                saveScript(name, editor.value);
+            }
+        } catch (error) {
+            showResponse('Cannot save invalid script: ' + error.message, false);
+        }
+    }
+
+    function saveScript(name, scriptContent) {
+        try {
+            let scripts = JSON.parse(localStorage.getItem('servoScripts') || '{}');
+            scripts[name] = {
+                content: scriptContent,
+                savedAt: new Date().toISOString()
+            };
+            localStorage.setItem('servoScripts', JSON.stringify(scripts));
+            showResponse(`✓ Script "${name}" saved successfully`, true);
+            loadSavedScripts();
+        } catch (error) {
+            showResponse('Error saving script: ' + error.message, false);
+        }
+    }
+
+    function loadSavedScripts() {
+        const scriptList = document.getElementById('scriptList');
+
+        try {
+            const scripts = JSON.parse(localStorage.getItem('servoScripts') || '{}');
+            const scriptNames = Object.keys(scripts);
+
+            if (scriptNames.length === 0) {
+                scriptList.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">No saved scripts yet</div>';
+                return;
+            }
+
+            scriptList.innerHTML = '';
+
+            scriptNames.forEach(name => {
+                const script = scripts[name];
+                const savedDate = new Date(script.savedAt).toLocaleString();
+
+                const scriptItem = document.createElement('div');
+                scriptItem.className = 'script-item';
+                scriptItem.innerHTML = `
+                    <div>
+                        <div class="script-item-name">${name}</div>
+                        <div style="font-size: 12px; color: #999;">Saved: ${savedDate}</div>
+                    </div>
+                    <div class="script-item-actions">
+                        <button class="btn-small btn-load" onclick="loadScript('${name}')">
+                            📂 Load
+                        </button>
+                        <button class="btn-small btn-execute" onclick="executeNamedScript('${name}')">
+                            ▶️ Run
+                        </button>
+                        <button class="btn-small btn-delete" onclick="deleteScript('${name}')">
+                            🗑️
+                        </button>
+                    </div>
+                `;
+                scriptList.appendChild(scriptItem);
+            });
+
+        } catch (error) {
+            scriptList.innerHTML = '<div style="text-align: center; color: #f5576c; padding: 20px;">Error loading scripts</div>';
+            console.error('Error loading scripts:', error);
+        }
+    }
+
+    function loadScript(name) {
+        try {
+            const scripts = JSON.parse(localStorage.getItem('servoScripts') || '{}');
+            if (scripts[name]) {
+                document.getElementById('scriptEditor').value = scripts[name].content;
+                const script = JSON.parse(scripts[name].content);
+                scriptCommands = script.commands || [];
+                updateCommandPreview();
+                showResponse(`✓ Loaded script "${name}"`, true);
+            }
+        } catch (error) {
+            showResponse('Error loading script: ' + error.message, false);
+        }
+    }
+
+    async function executeNamedScript(name) {
+        try {
+            const scripts = JSON.parse(localStorage.getItem('servoScripts') || '{}');
+            if (scripts[name]) {
+                const script = JSON.parse(scripts[name].content);
+
+                showResponse(`Executing "${name}" with ${script.commands.length} commands...`, true);
+
+                const response = await fetch(`${BASE_URL}/script`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(script)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showResponse(`✓ "${name}" executed: ${result.commands_queued} commands queued`, true);
+                } else {
+                    showResponse(`Script error: ${result.message}`, false);
+                }
+            }
+        } catch (error) {
+            showResponse('Error executing script: ' + error.message, false);
+        }
+    }
+
+    function deleteScript(name) {
+        if (confirm(`Delete script "${name}"?`)) {
+            try {
+                let scripts = JSON.parse(localStorage.getItem('servoScripts') || '{}');
+                delete scripts[name];
+                localStorage.setItem('servoScripts', JSON.stringify(scripts));
+                showResponse(`✓ Script "${name}" deleted`, true);
+                loadSavedScripts();
+            } catch (error) {
+                showResponse('Error deleting script: ' + error.message, false);
+            }
+        }
+    }
+
+    // ==================== Keyboard Shortcuts ====================
+
     document.addEventListener('keydown', function(e) {
-        // Only trigger if not typing in an input
-        if (e.target.tagName === 'INPUT') {
-            if (e.key === 'Enter') {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
                 if (currentMode === 'absolute') {
                     moveTo();
                 } else if (currentMode === 'home') {
@@ -991,49 +1601,47 @@
             return;
         }
 
-        // Number keys to switch axes (1=X, 2=Z, 3=Both)
-        if (e.key === '1') {
-            setActiveAxis('x');
-        } else if (e.key === '2') {
-            setActiveAxis('z');
-        } else if (e.key === '3') {
-            setActiveAxis('both');
-        }
+        // View switching (1=X, 2=Z, 3=Both, 4=Script)
+        if (e.key === '1') setActiveView('x');
+        else if (e.key === '2') setActiveView('z');
+        else if (e.key === '3') setActiveView('both');
+        else if (e.key === '4') setActiveView('script');
 
-        // Arrow keys for increment mode
-        if (currentMode === 'increment') {
-            if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                moveIncrement(-1);
-            } else if (e.key === 'ArrowRight') {
-                e.preventDefault();
-                moveIncrement(1);
+        // Only in manual control mode
+        if (activeView !== 'script') {
+            if (currentMode === 'increment') {
+                if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    moveIncrement(-1);
+                } else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    moveIncrement(1);
+                }
             }
-        }
 
-        // Spacebar to stop
-        if (e.key === ' ') {
-            e.preventDefault();
-            sendCommand('stop');
-        }
+            if (e.key === ' ') {
+                e.preventDefault();
+                sendCommand('stop');
+            }
 
-        // 'S' key to sync
-        if (e.key === 's' || e.key === 'S') {
-            e.preventDefault();
-            syncAxes();
-        }
+            if (e.key === 's' || e.key === 'S') {
+                e.preventDefault();
+                syncAxes();
+            }
 
-        // 'H' key to start homing (if in home mode)
-        if ((e.key === 'h' || e.key === 'H') && currentMode === 'home') {
-            e.preventDefault();
-            startHoming();
+            if ((e.key === 'h' || e.key === 'H') && currentMode === 'home') {
+                e.preventDefault();
+                startHoming();
+            }
         }
     });
 
-    // Initialize
+    // ==================== Initialization ====================
+
     window.addEventListener('load', function() {
         getStatus();
         updateIncrementDisplay();
+        updateBuilderFields();
     });
 </script>
 </body>

@@ -123,11 +123,11 @@ fn parse_home_params(query: &String) -> Result<(Option<AxisId>, i32, i32), Strin
 fn send_command(tx: &Sender<AxisCommand>, axis_opt: Option<AxisId>, command: Command) {
   match axis_opt {
     Some(axis) => {
-      tx.send(AxisCommand { axis, command }).unwrap();
+      tx.send(AxisCommand { axis: Some(axis), command }).unwrap();
     }
     None => {
-      tx.send(AxisCommand { axis: AxisId::AxisX, command }).unwrap();
-      tx.send(AxisCommand { axis: AxisId::AxisZ, command }).unwrap();
+      tx.send(AxisCommand { axis: Some(AxisId::AxisX), command }).unwrap();
+      tx.send(AxisCommand { axis: Some(AxisId::AxisZ), command }).unwrap();
     }
   }
 }
@@ -145,7 +145,14 @@ fn parse_move_params(query: String) -> Result<(Option<AxisId>, i32, u32), String
   let position = parse_query_param::<i32>(&query, "position")?;
   let speed = parse_query_param::<u32>(&query, "speed")?;
   Ok((axis, position, speed))
-}fn main() -> anyhow::Result<()> {
+}
+
+#[derive(Debug, Deserialize)]
+struct ScriptRequest {
+  commands: Vec<AxisCommand>,
+}
+
+fn main() -> anyhow::Result<()> {
   esp_idf_svc::sys::link_patches();
   esp_idf_svc::log::EspLogger::initialize_default();
 
@@ -368,7 +375,7 @@ fn parse_move_params(query: String) -> Result<(Option<AxisId>, i32, u32), String
 
     // Send Sync command - it will be distributed to both axes
     cmd_tx_sync.send(AxisCommand {
-      axis: AxisId::AxisX, // Doesn't matter, will be ignored
+      axis: Some(AxisId::AxisX), // Doesn't matter, will be ignored
       command: Command::Sync { id: None },
     }).ok();
 
@@ -394,6 +401,42 @@ fn parse_move_params(query: String) -> Result<(Option<AxisId>, i32, u32), String
     } else {
       resp.write_all(b"Error: Could not read status")?;
     }
+    Ok(())
+  })?;
+
+  let cmd_tx_script = cmd_tx.clone();
+  server.fn_handler::<anyhow::Error, _>("/script", Method::Post, move |mut req| {
+    let mut body = Vec::new();
+    let mut buffer = [0u8; 1024];
+
+    // Read the request body in chunks
+    loop {
+      match req.read(&mut buffer) {
+        Ok(0) => break, // EOF
+        Ok(n) => body.extend_from_slice(&buffer[..n]),
+        Err(e) => return Err(e.into()),
+      }
+    }
+
+    let mut resp = req.into_ok_response()?;
+
+    match serde_json::from_slice::<ScriptRequest>(&body) {
+      Ok(script) => {
+        let command_count = script.commands.len();
+
+        for axis_cmd in script.commands {
+          send_command(&cmd_tx_script, axis_cmd.axis, axis_cmd.command);
+        }
+
+        resp.write_all(
+          format!("{{\"status\":\"success\",\"commands_queued\":{}}}", command_count).as_bytes()
+        )?;
+      }
+      Err(e) => {
+        resp.write_all(format!("{{\"status\":\"error\",\"message\":\"{}\"}}", e).as_bytes())?;
+      }
+    }
+
     Ok(())
   })?;
 
