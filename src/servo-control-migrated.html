@@ -120,7 +120,7 @@
 
         .mode-toggle {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 10px;
             margin-bottom: 10px;
         }
@@ -303,6 +303,11 @@
             color: white;
         }
 
+        .btn-home {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
         .status-display {
             background: #f8f9fa;
             border-radius: 8px;
@@ -368,31 +373,6 @@
             cursor: pointer;
         }
 
-        .current-position-display {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-
-        .current-position-display.both {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-        }
-
-        .current-position-display .label {
-            font-size: 14px;
-            opacity: 0.9;
-            margin-bottom: 5px;
-        }
-
-        .current-position-display .value {
-            font-size: 32px;
-            font-weight: 700;
-            font-family: 'Courier New', monospace;
-        }
-
         .dual-position-display {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -424,6 +404,36 @@
             font-family: 'Courier New', monospace;
         }
 
+        .direction-toggle {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .direction-btn {
+            padding: 12px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: white;
+            color: #666;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .direction-btn:hover {
+            border-color: #f093fb;
+            color: #f093fb;
+        }
+
+        .direction-btn.active {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border-color: transparent;
+        }
+
         @media (max-width: 600px) {
             .container {
                 padding: 25px;
@@ -448,6 +458,10 @@
             .axis-tabs {
                 grid-template-columns: 1fr;
             }
+
+            .mode-toggle {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -470,8 +484,17 @@
         </div>
     </div>
 
-    <div class="section" id="positionDisplay">
-        <!-- This will be dynamically updated based on selected axis -->
+    <div class="section">
+        <div class="dual-position-display">
+            <div class="axis-position-card">
+                <div class="label">X-Axis Position</div>
+                <div class="value" id="axisXPosition">---</div>
+            </div>
+            <div class="axis-position-card axis1">
+                <div class="label">Z-Axis Position</div>
+                <div class="value" id="axisZPosition">---</div>
+            </div>
+        </div>
     </div>
 
     <div class="section">
@@ -482,6 +505,9 @@
             </button>
             <button class="mode-btn" id="incrementBtn" onclick="setMode('increment')">
                 ↔️ Incremental Move
+            </button>
+            <button class="mode-btn" id="homeBtn" onclick="setMode('home')">
+                🏠 Homing
             </button>
         </div>
     </div>
@@ -536,6 +562,31 @@
         </div>
     </div>
 
+    <div class="section" id="homeSection" style="display: none;">
+        <div class="section-title">Homing Sequence</div>
+        <div class="control-group">
+            <label>Homing Direction</label>
+            <div class="direction-toggle">
+                <button class="direction-btn active" id="dirPositiveBtn" onclick="setHomeDirection(1)">
+                    ➕ Positive Direction
+                </button>
+                <button class="direction-btn" id="dirNegativeBtn" onclick="setHomeDirection(-1)">
+                    ➖ Negative Direction
+                </button>
+            </div>
+        </div>
+        <div class="control-group">
+            <label for="homeSpeed">Homing Speed</label>
+            <input type="number" id="homeSpeed" placeholder="Enter homing speed" step="100" value="800" min="1">
+        </div>
+        <button class="btn-home" onclick="startHoming()" style="width: 100%;">
+            🏠 Start Homing
+        </button>
+        <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border-radius: 8px; font-size: 14px; color: #856404;">
+            <strong>⚠️ Note:</strong> Homing will move the axis until it reaches the limit switch. Ensure the path is clear before starting.
+        </div>
+    </div>
+
     <div class="section">
         <div class="section-title">System Controls</div>
         <div class="button-group-five">
@@ -572,13 +623,14 @@
 </div>
 
 <script>
-    // Version 4.1 - Added Sync command support
+    // Version 5.1 - Always show both axes positions
     const BASE_URL = window.location.origin;
     let refreshInterval = null;
     let currentMode = 'absolute';
     let activeAxis = 'x'; // 'x', 'z', or 'both'
+    let homeDirection = 1; // 1 for positive, -1 for negative
 
-    console.log('X-Z Axis Servo Control loaded - Version 4.1');
+    console.log('X-Z Axis Servo Control loaded - Version 5.1');
     console.log('Base URL:', BASE_URL);
 
     // Update the endpoint display
@@ -611,54 +663,51 @@
             tabs[2].classList.add('active');
         }
 
-        updatePositionDisplay();
         getStatus();
-    }
-
-    function updatePositionDisplay() {
-        const displayDiv = document.getElementById('positionDisplay');
-
-        if (activeAxis === 'both') {
-            displayDiv.innerHTML = `
-                    <div class="dual-position-display">
-                        <div class="axis-position-card">
-                            <div class="label">X-Axis Position</div>
-                            <div class="value" id="axisXPosition">---</div>
-                        </div>
-                        <div class="axis-position-card axis1">
-                            <div class="label">Z-Axis Position</div>
-                            <div class="value" id="axisZPosition">---</div>
-                        </div>
-                    </div>
-                `;
-        } else {
-            const axisName = activeAxis === 'x' ? 'X-Axis' : 'Z-Axis';
-            displayDiv.innerHTML = `
-                    <div class="current-position-display">
-                        <div class="label">${axisName} Current Position</div>
-                        <div class="value" id="currentPositionDisplay">---</div>
-                    </div>
-                `;
-        }
     }
 
     function setMode(mode) {
         currentMode = mode;
         const absoluteBtn = document.getElementById('absoluteBtn');
         const incrementBtn = document.getElementById('incrementBtn');
+        const homeBtn = document.getElementById('homeBtn');
         const absoluteSection = document.getElementById('absoluteSection');
         const incrementSection = document.getElementById('incrementSection');
+        const homeSection = document.getElementById('homeSection');
+
+        // Reset all buttons
+        absoluteBtn.classList.remove('active');
+        incrementBtn.classList.remove('active');
+        homeBtn.classList.remove('active');
+
+        // Hide all sections
+        absoluteSection.style.display = 'none';
+        incrementSection.style.display = 'none';
+        homeSection.style.display = 'none';
 
         if (mode === 'absolute') {
             absoluteBtn.classList.add('active');
-            incrementBtn.classList.remove('active');
             absoluteSection.style.display = 'block';
-            incrementSection.style.display = 'none';
-        } else {
-            absoluteBtn.classList.remove('active');
+        } else if (mode === 'increment') {
             incrementBtn.classList.add('active');
-            absoluteSection.style.display = 'none';
             incrementSection.style.display = 'block';
+        } else if (mode === 'home') {
+            homeBtn.classList.add('active');
+            homeSection.style.display = 'block';
+        }
+    }
+
+    function setHomeDirection(direction) {
+        homeDirection = direction;
+        const posBtn = document.getElementById('dirPositiveBtn');
+        const negBtn = document.getElementById('dirNegativeBtn');
+
+        if (direction === 1) {
+            posBtn.classList.add('active');
+            negBtn.classList.remove('active');
+        } else {
+            posBtn.classList.remove('active');
+            negBtn.classList.add('active');
         }
     }
 
@@ -666,6 +715,40 @@
         const incrementSize = document.getElementById('incrementSize').value;
         document.getElementById('incrementValue').textContent = incrementSize;
         document.getElementById('decrementValue').textContent = incrementSize;
+    }
+
+    async function startHoming() {
+        const speed = document.getElementById('homeSpeed').value;
+
+        if (!speed) {
+            showResponse('Please enter homing speed', false);
+            return;
+        }
+
+        try {
+            let url;
+            if (activeAxis === 'both') {
+                // Home both axes
+                url = `${BASE_URL}/home?direction=${homeDirection}&speed=${speed}`;
+            } else {
+                // Home specific axis
+                url = `${BASE_URL}/home?axis=${activeAxis}&direction=${homeDirection}&speed=${speed}`;
+            }
+
+            console.log('Home URL:', url);
+            const response = await fetch(url);
+            const text = await response.text();
+
+            const axisLabel = activeAxis === 'both' ? 'Both axes' : `${activeAxis.toUpperCase()}-Axis`;
+            const dirLabel = homeDirection === 1 ? 'positive' : 'negative';
+            showResponse(`${axisLabel}: Homing in ${dirLabel} direction at speed ${speed}. ${text}`, response.ok);
+
+            if (response.ok) {
+                setTimeout(getStatus, 300);
+            }
+        } catch (error) {
+            showResponse('Error starting homing: ' + error.message, false);
+        }
     }
 
     async function moveTo() {
@@ -738,13 +821,13 @@
 
             if (activeAxis === 'both') {
                 // Move both axes by the same amount
-                const newPosX = statusData.axisx.position + amount;
-                const newPosZ = statusData.axisz.position + amount;
+                const newPosX = statusData.axis0.position + amount;
+                const newPosZ = statusData.axis1.position + amount;
                 url = `${BASE_URL}/moveto?position=${newPosX}&speed=${speed}`;
                 message = `Both axes moving ${amount > 0 ? '+' : ''}${amount} (X→${newPosX}, Z→${newPosZ}) @ speed ${speed}`;
             } else {
-                // Move specific axis
-                const axisData = statusData[`axis${activeAxis}`];
+                // Move specific axis (map x to axis0, z to axis1)
+                const axisData = activeAxis === 'x' ? statusData.axis0 : statusData.axis1;
                 const currentPos = axisData.position;
                 const newPosition = currentPos + amount;
                 url = `${BASE_URL}/moveto?axis=${activeAxis}&position=${newPosition}&speed=${speed}`;
@@ -812,71 +895,67 @@
             const text = await response.text();
             const data = JSON.parse(text);
 
-            // Update position displays
-            if (activeAxis === 'both') {
-                document.getElementById('axisXPosition').textContent = data.axisx.position;
-                document.getElementById('axisZPosition').textContent = data.axisz.position;
-            } else {
-                const axisData = data[`axis${activeAxis}`];
-                document.getElementById('currentPositionDisplay').textContent = axisData.position;
-            }
+            // Always update both position displays
+            document.getElementById('axisXPosition').textContent = data.axis0.position;
+            document.getElementById('axisZPosition').textContent = data.axis1.position;
 
-            // Update status display
+            // Update status display based on selected axis
             const statusDiv = document.getElementById('statusDisplay');
 
             if (activeAxis === 'both') {
                 statusDiv.innerHTML = `
-                        <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 2px solid #667eea;">
-                            <div style="font-weight: 600; color: #667eea; margin-bottom: 10px;">X-Axis</div>
-                            <div class="status-item">
-                                <span class="status-label">Position:</span>
-                                <span class="status-value">${data.axisx.position}</span>
-                            </div>
-                            <div class="status-item">
-                                <span class="status-label">Target:</span>
-                                <span class="status-value">${data.axisx.target}</span>
-                            </div>
-                            <div class="status-item">
-                                <span class="status-label">Speed:</span>
-                                <span class="status-value">${data.axisx.speed}</span>
-                            </div>
-                        </div>
-                        <div>
-                            <div style="font-weight: 600; color: #4facfe; margin-bottom: 10px;">Z-Axis</div>
-                            <div class="status-item">
-                                <span class="status-label">Position:</span>
-                                <span class="status-value">${data.axisz.position}</span>
-                            </div>
-                            <div class="status-item">
-                                <span class="status-label">Target:</span>
-                                <span class="status-value">${data.axisz.target}</span>
-                            </div>
-                            <div class="status-item">
-                                <span class="status-label">Speed:</span>
-                                <span class="status-value">${data.axisz.speed}</span>
-                            </div>
-                        </div>
-                    `;
-            } else {
-                const axisData = data[`axis${activeAxis}`];
-                statusDiv.innerHTML = `
+                    <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 2px solid #667eea;">
+                        <div style="font-weight: 600; color: #667eea; margin-bottom: 10px;">X-Axis (axis0)</div>
                         <div class="status-item">
-                            <span class="status-label">Current Position:</span>
-                            <span class="status-value">${axisData.position}</span>
+                            <span class="status-label">Position:</span>
+                            <span class="status-value">${data.axis0.position}</span>
                         </div>
                         <div class="status-item">
-                            <span class="status-label">Target Position:</span>
-                            <span class="status-value">${axisData.target}</span>
+                            <span class="status-label">Target:</span>
+                            <span class="status-value">${data.axis0.target}</span>
                         </div>
                         <div class="status-item">
                             <span class="status-label">Speed:</span>
-                            <span class="status-value">${axisData.speed}</span>
+                            <span class="status-value">${data.axis0.speed}</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="font-weight: 600; color: #4facfe; margin-bottom: 10px;">Z-Axis (axis1)</div>
+                        <div class="status-item">
+                            <span class="status-label">Position:</span>
+                            <span class="status-value">${data.axis1.position}</span>
                         </div>
                         <div class="status-item">
-                            <span class="status-label">Last Update:</span>
-                            <span class="status-value">${axisData.timestamp} μs</span>
+                            <span class="status-label">Target:</span>
+                            <span class="status-value">${data.axis1.target}</span>
                         </div>
-                    `;
+                        <div class="status-item">
+                            <span class="status-label">Speed:</span>
+                            <span class="status-value">${data.axis1.speed}</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                const axisData = activeAxis === 'x' ? data.axis0 : data.axis1;
+                const axisName = activeAxis === 'x' ? 'X-Axis (axis0)' : 'Z-Axis (axis1)';
+                statusDiv.innerHTML = `
+                    <div class="status-item">
+                        <span class="status-label">Axis:</span>
+                        <span class="status-value">${axisName}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Current Position:</span>
+                        <span class="status-value">${axisData.position}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Target Position:</span>
+                        <span class="status-value">${axisData.target}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Speed:</span>
+                        <span class="status-value">${axisData.speed}</span>
+                    </div>
+                `;
             }
 
         } catch (error) {
@@ -905,6 +984,8 @@
             if (e.key === 'Enter') {
                 if (currentMode === 'absolute') {
                     moveTo();
+                } else if (currentMode === 'home') {
+                    startHoming();
                 }
             }
             return;
@@ -941,11 +1022,16 @@
             e.preventDefault();
             syncAxes();
         }
+
+        // 'H' key to start homing (if in home mode)
+        if ((e.key === 'h' || e.key === 'H') && currentMode === 'home') {
+            e.preventDefault();
+            startHoming();
+        }
     });
 
     // Initialize
     window.addEventListener('load', function() {
-        updatePositionDisplay();
         getStatus();
         updateIncrementDisplay();
     });

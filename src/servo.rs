@@ -1,4 +1,4 @@
-use esp_idf_svc::hal::gpio::{AnyOutputPin, Output, PinDriver};
+use esp_idf_svc::hal::gpio::{AnyInputPin, AnyOutputPin, Input, Output, PinDriver, Pull};
 use esp_idf_svc::sys::{esp, esp_task_wdt_add, esp_task_wdt_reset, esp_timer_get_time, vTaskDelay, xTaskGetCurrentTaskHandle};
 use esp_idf_svc::systime::EspSystemTime;
 use std::collections::VecDeque;
@@ -30,6 +30,7 @@ impl AxisId {
 #[derive(Clone, Copy, Debug)]
 pub enum Command {
   MoveTo { position: i32, speed: i32 },
+  Home { direction: i32, speed: i32 }, // direction: 1 for forward, -1 for backward
   Stop,
   Resume,
   Reset,
@@ -67,6 +68,7 @@ pub struct AxisPins {
   pub step_pin: PinDriver<'static, AnyOutputPin, Output>,
   pub dir_pin: PinDriver<'static, AnyOutputPin, Output>,
   pub enable_pin: PinDriver<'static, AnyOutputPin, Output>,
+  pub home_pin: PinDriver<'static, AnyInputPin, Input>, // Homing limit switch
 }
 
 pub struct Axis {
@@ -78,6 +80,8 @@ pub struct Axis {
   step_pin: PinDriver<'static, AnyOutputPin, Output>,
   dir_pin: PinDriver<'static, AnyOutputPin, Output>,
   enable_pin: PinDriver<'static, AnyOutputPin, Output>,
+  home_pin: PinDriver<'static, AnyInputPin, Input>,
+  homing_direction: i32, // Used during homing
 }
 
 impl Axis {
@@ -94,6 +98,8 @@ impl Axis {
       step_pin: pins.step_pin,
       dir_pin: pins.dir_pin,
       enable_pin: pins.enable_pin,
+      home_pin: pins.home_pin,
+      homing_direction: 0,
     }
   }
 
@@ -115,6 +121,11 @@ impl Axis {
     // Small delay for motor driver to respond
     delay_us(200);
   }
+
+  // Check if home switch is pressed (active LOW with internal pullup)
+  fn is_home_switch_pressed(&self) -> bool {
+    self.home_pin.is_low()
+  }
 }
 
 // Helper function for microsecond delays
@@ -135,13 +146,17 @@ enum State {
   Running,
   Paused,
   Waiting { wait_start: Instant },
+  Homing, // New state for homing
 }
 
 impl PartialEq for State {
   fn eq(&self, other: &Self) -> bool {
     matches!(
             (self, other),
-            (State::Running, State::Running) | (State::Paused, State::Paused) | (State::Waiting { .. }, State::Waiting { .. })
+            (State::Running, State::Running)
+            | (State::Paused, State::Paused)
+            | (State::Waiting { .. }, State::Waiting { .. })
+            | (State::Homing, State::Homing)
         )
   }
 }
@@ -276,6 +291,10 @@ pub fn axis_thread(
                 println!("[{:?}]   -> Adding MoveTo to buffer: pos={}, speed={}", axis_cmd.axis, position, speed);
                 axis_state.command_buffer.push_back(axis_cmd.command);
               }
+              Command::Home { direction, speed } => {
+                println!("[{:?}]   -> Adding Home to buffer: direction={}, speed={}", axis_cmd.axis, direction, speed);
+                axis_state.command_buffer.push_back(axis_cmd.command);
+              }
               Command::Wait { time_ms } => {
                 println!("[{:?}]   -> Adding Wait to buffer: time_ms={}", axis_cmd.axis, time_ms);
                 axis_state.command_buffer.push_back(axis_cmd.command);
@@ -388,6 +407,8 @@ fn process_axis_commands(
     if axis_state.current.is_some() {
       println!("[{:?}] <<< Popped command from buffer: {:?}", axis.id, axis_state.current);
     }
+    // reset the speed
+    axis.speed = 0;
   }
 
   // Process current command
@@ -408,6 +429,47 @@ fn process_axis_commands(
           axis_state.state = State::Waiting { wait_start: Instant::now() };
         }
         return None;
+      }
+      Command::Home { direction, speed } => {
+        // Check if home switch is already pressed at start
+        if axis_state.state != State::Homing && axis.is_home_switch_pressed() {
+          println!("[{:?}] === Homing complete - switch already pressed at start", axis.id);
+          axis.position = 0;
+          axis.set_enable(false);
+          axis_state.current = None;
+          axis_state.state = State::Running;
+          return None;
+        }
+
+        // Set state to homing if not already
+        if axis_state.state != State::Homing {
+          println!("[{:?}] === Starting homing: direction={}, speed={}", axis.id, direction, speed);
+          axis_state.state = State::Homing;
+          axis.desired_speed = *speed;
+          axis.speed = MIN_SPEED; // Start slow
+          axis.homing_direction = *direction;
+          axis.set_enable(true);
+
+          // Set direction pin
+          if *direction > 0 {
+            let _ = axis.dir_pin.set_high();
+          } else {
+            let _ = axis.dir_pin.set_low();
+          }
+        }
+
+        // Check if home switch is pressed
+        if axis.is_home_switch_pressed() {
+          println!("[{:?}] === Homing complete - switch triggered at position {}", axis.id, axis.position);
+          axis.position = 0; // Reset position to zero
+          axis.set_enable(false);
+          axis_state.current = None;
+          axis_state.state = State::Running;
+          return None;
+        }
+
+        // Continue homing movement
+        return Some(calculate_time_to_next_pulse_homing(axis, axis_state, current_time));
       }
       Command::Sync {id} => {
         // Reset to Running state if we were waiting
@@ -489,17 +551,6 @@ fn calculate_time_to_next_pulse(
   axis_state: &AxisState,
   current_time: u64,
 ) -> u64 {
-  // // Calculate distance to target
-  // let distance = (axis.position - axis.target).abs();
-  // let decel_distance = axis.speed;
-  //
-  // // Acceleration/deceleration logic
-  // let target_speed = if distance > decel_distance {
-  //   axis.desired_speed.min(axis.speed + 1)
-  // } else {
-  //   distance.max(MIN_SPEED).min(axis.speed)
-  // };
-
   // Calculate step delay based on current speed
   let step_delay_us = 1_000_000 / axis.speed.max(10) as u64;
 
@@ -518,41 +569,81 @@ fn calculate_time_to_next_pulse(
   }
 }
 
+// Calculate time until next pulse during homing (simpler logic)
+fn calculate_time_to_next_pulse_homing(
+  axis: &mut Axis,
+  axis_state: &AxisState,
+  current_time: u64,
+) -> u64 {
+  // Use constant speed during homing
+  let step_delay_us = 1_000_000 / axis.desired_speed.max(10) as u64;
+
+  let time_since_last_pulse = if axis_state.last_pulse_time > 0 {
+    current_time.saturating_sub(axis_state.last_pulse_time)
+  } else {
+    step_delay_us
+  };
+
+  if time_since_last_pulse >= step_delay_us {
+    0
+  } else {
+    step_delay_us - time_since_last_pulse
+  }
+}
+
 // Execute a step pulse on the axis
 fn execute_pulse(
   axis: &mut Axis,
   axis_state: &mut AxisState,
   current_time: u64,
 ) {
-  // Update speed based on distance to target
-  let distance = (axis.position - axis.target).abs();
-  let decel_distance = axis.speed;
+  // Different behavior for homing vs normal movement
+  if axis_state.state == State::Homing {
+    // During homing, maintain constant speed
+    axis.speed = axis.desired_speed;
 
-  if distance > decel_distance {
-    if axis.speed < axis.desired_speed {
-      axis.speed += 1;
-    }
+    // Generate step pulse
+    let _ = axis.step_pin.set_high();
+    delay_us(STEP_PULSE_US);
+    let _ = axis.step_pin.set_low();
+
+    // Update position based on homing direction
+    axis.position += axis.homing_direction;
+
+    // Record pulse time
+    axis_state.last_pulse_time = current_time;
   } else {
-    let target_speed = distance.max(MIN_SPEED);
-    if axis.speed > target_speed {
-      axis.speed -= 1;
+    // Normal movement with acceleration/deceleration
+    // Update speed based on distance to target
+    let distance = (axis.position - axis.target).abs();
+    let decel_distance = axis.speed;
+
+    if distance > decel_distance {
+      if axis.speed < axis.desired_speed {
+        axis.speed += 1;
+      }
+    } else {
+      let target_speed = distance.max(MIN_SPEED);
+      if axis.speed > target_speed {
+        axis.speed -= 1;
+      }
     }
+
+    // Generate step pulse
+    let _ = axis.step_pin.set_high();
+    delay_us(STEP_PULSE_US);
+    let _ = axis.step_pin.set_low();
+
+    // Update position
+    if axis.position < axis.target {
+      axis.position += 1;
+    } else {
+      axis.position -= 1;
+    }
+
+    // Record pulse time
+    axis_state.last_pulse_time = current_time;
   }
-
-  // Generate step pulse
-  let _ = axis.step_pin.set_high();
-  delay_us(STEP_PULSE_US);
-  let _ = axis.step_pin.set_low();
-
-  // Update position
-  if axis.position < axis.target {
-    axis.position += 1;
-  } else {
-    axis.position -= 1;
-  }
-
-  // Record pulse time
-  axis_state.last_pulse_time = current_time;
 
   // println!("[{:?}] Pulse executed, pos={}, target={}, speed={}",
   //          axis.id, axis.position, axis.target, axis.speed);

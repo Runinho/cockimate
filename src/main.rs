@@ -5,6 +5,7 @@
 mod servo;
 
 use core::convert::TryInto;
+use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Sender};
 use embedded_svc::{http::{Headers, Method}, io::{Read, Write}, wifi, wifi::{AuthMethod, ClientConfiguration, Configuration}};
@@ -20,8 +21,10 @@ use std::thread::{self, Builder, JoinHandle};
 use std::time::Duration;
 use embedded_svc::wifi::AccessPointConfiguration;
 use esp_idf_svc::hal::cpu::Core;
-use esp_idf_svc::hal::gpio::{IOPin, OutputPin, PinDriver};
+use esp_idf_svc::hal::gpio::{IOPin, InputPin, OutputPin, PinDriver, Pull};
 use esp_idf_svc::hal::task::thread::ThreadSpawnConfiguration;
+use esp_idf_svc::handle::RawHandle;
+use esp_idf_svc::netif::EspNetif;
 use log::*;
 
 use serde::Deserialize;
@@ -89,6 +92,33 @@ fn parse_axis_param(query: &String) -> Result<Option<AxisId>, String> {
   }
 }
 
+// Helper function to parse homing parameters
+fn parse_home_params(query: &String) -> Result<(Option<AxisId>, i32, i32), String> {
+  let axis_opt = parse_axis_param(query)?;  // Reuses existing function
+
+  // Parse direction with two possible parameter names: "dir" or "direction"
+  let direction = parse_optional_query_param::<i32>(query, "dir")
+      .or_else(|| parse_optional_query_param::<i32>(query, "direction"))
+      .unwrap_or(-1);  // Default: backward
+
+  // Validate direction
+  if direction != 1 && direction != -1 {
+    return Err(format!("Direction must be 1 or -1, got: {}", direction));
+  }
+
+  // Parse speed with default value
+  let speed = parse_optional_query_param::<i32>(query, "speed")
+      .unwrap_or(500);
+
+  // Validate speed
+  if speed <= 0 {
+    return Err(format!("Speed must be positive, got: {}", speed));
+  }
+
+  Ok((axis_opt, direction, speed))
+}
+
+
 // Helper function to send command to one or both axes
 fn send_command(tx: &Sender<AxisCommand>, axis_opt: Option<AxisId>, command: Command) {
   match axis_opt {
@@ -129,9 +159,15 @@ fn parse_move_params(query: String) -> Result<(Option<AxisId>, i32, u32), String
     EspWifi::new(peripherals.modem, sys_loop.clone(), Some(nvs))?,
     sys_loop,
   )?;
-  // wifi.wifi_mut()
-  //     .sta_netif()
-  //     .set_hostname("cockimate4")?;
+
+  // Set hostname using the ESP-IDF sys bindings directly
+  let hostname = CString::new("cockimate").unwrap();
+  unsafe {
+    esp_idf_sys::esp!(esp_idf_sys::esp_netif_set_hostname(
+        wifi.wifi_mut().sta_netif().handle() as *mut _,
+        hostname.as_ptr()
+    ))?;
+  }
 
   connect_wifi(&mut wifi)?;
 
@@ -284,6 +320,27 @@ fn parse_move_params(query: String) -> Result<(Option<AxisId>, i32, u32), String
     Ok(())
   })?;
 
+  // Home
+  let cmd_tx_home = cmd_tx.clone();
+  server.fn_handler::<anyhow::Error, _>("/home", Method::Get, move |req| {
+    let query = req.uri()
+        .split_once('?')
+        .map(|(_, q)| q.to_string())
+        .unwrap_or_default();
+    let mut resp = req.into_ok_response()?;
+
+    match parse_home_params(&query) {
+      Ok((axis_opt, direction, speed)) => {
+        send_command(&cmd_tx_home, axis_opt, Command::Home { direction, speed });
+        resp.write_all(format_response(axis_opt, &format!("home dir={} speed={}", direction, speed)).as_bytes())?;
+      }
+      Err(e) => {
+        resp.write_all(format!("Error: {}", e).as_bytes())?;
+      }
+    }
+    Ok(())
+  })?;
+
   // Wait command
   let cmd_tx_wait = cmd_tx.clone();
   server.fn_handler::<anyhow::Error, _>("/wait", Method::Get, move |req| {
@@ -345,14 +402,16 @@ fn parse_move_params(query: String) -> Result<(Option<AxisId>, i32, u32), String
   let step_pin = PinDriver::output(peripherals.pins.gpio32.downgrade_output())?;
   let dir_pin = PinDriver::output(peripherals.pins.gpio33.downgrade_output())?;
   let enable_pin = PinDriver::output(peripherals.pins.gpio14.downgrade_output())?;
+  let home_pin = PinDriver::input(peripherals.pins.gpio35.downgrade_input())?;
 
-  let axis_x = Axis::new(AxisX, AxisPins{step_pin, dir_pin, enable_pin});
+  let axis_x = Axis::new(AxisX, AxisPins{step_pin, dir_pin, enable_pin, home_pin});
 
   let step_pin = PinDriver::output(peripherals.pins.gpio25.downgrade_output())?;
   let dir_pin = PinDriver::output(peripherals.pins.gpio26.downgrade_output())?;
   let enable_pin = PinDriver::output(peripherals.pins.gpio27.downgrade_output())?;
+  let home_pin = PinDriver::input(peripherals.pins.gpio36.downgrade_input())?;
 
-  let axis_z = Axis::new(AxisZ, AxisPins{step_pin, dir_pin, enable_pin});
+  let axis_z = Axis::new(AxisZ, AxisPins{step_pin, dir_pin, enable_pin, home_pin});
 
   let status_clone = status.clone();
 
@@ -373,11 +432,12 @@ fn parse_move_params(query: String) -> Result<(Option<AxisId>, i32, u32), String
     })?;
 
   // Main loop - send some test commands
-  thread::sleep(Duration::from_secs(1));
-  println!("Sending test command");
-  cmd_tx.send(AxisCommand{ axis: AxisX, command: Command::MoveTo { position: 1000, speed: 500 }})?;
+  // thread::sleep(Duration::from_secs(1));
+  // println!("Sending test command");
+  // cmd_tx.send(AxisCommand{ axis: AxisX, command: Command::MoveTo { position: 1000, speed: 500 }})?;
+  //
+  // thread::sleep(Duration::from_secs(5));
 
-  thread::sleep(Duration::from_secs(5));
   println!("Current status: {:?}", *status.lock().unwrap());
 
   // Keep wifi and the server running beyond when main() returns (forever)
