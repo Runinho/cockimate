@@ -445,14 +445,16 @@ fn main() -> anyhow::Result<()> {
   let step_pin = PinDriver::output(peripherals.pins.gpio32.downgrade_output())?;
   let dir_pin = PinDriver::output(peripherals.pins.gpio33.downgrade_output())?;
   let enable_pin = PinDriver::output(peripherals.pins.gpio14.downgrade_output())?;
-  let home_pin = PinDriver::input(peripherals.pins.gpio35.downgrade_input())?;
+  let mut home_pin = PinDriver::input(peripherals.pins.gpio21.downgrade())?;
+  home_pin.set_pull(Pull::Up);
 
   let axis_x = Axis::new(AxisX, AxisPins{step_pin, dir_pin, enable_pin, home_pin});
 
   let step_pin = PinDriver::output(peripherals.pins.gpio25.downgrade_output())?;
   let dir_pin = PinDriver::output(peripherals.pins.gpio26.downgrade_output())?;
   let enable_pin = PinDriver::output(peripherals.pins.gpio27.downgrade_output())?;
-  let home_pin = PinDriver::input(peripherals.pins.gpio36.downgrade_input())?;
+  let mut home_pin = PinDriver::input(peripherals.pins.gpio22.downgrade())?;
+  home_pin.set_pull(Pull::Up);
 
   let axis_z = Axis::new(AxisZ, AxisPins{step_pin, dir_pin, enable_pin, home_pin});
 
@@ -461,7 +463,7 @@ fn main() -> anyhow::Result<()> {
   // Configure thread for Core 1
   ThreadSpawnConfiguration::set(&ThreadSpawnConfiguration {
     name: Some(b"axis_task\0"),
-    stack_size: 8192, // Adjust as needed
+    stack_size: 8192*64, // Adjust as needed
     priority: 5,
     pin_to_core: Some(Core::Core1),
     ..Default::default()

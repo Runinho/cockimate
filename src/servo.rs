@@ -1,4 +1,4 @@
-use esp_idf_svc::hal::gpio::{AnyInputPin, AnyOutputPin, Input, Output, PinDriver, Pull};
+use esp_idf_svc::hal::gpio::{AnyIOPin, AnyOutputPin, Input, Output, PinDriver, Pull};
 use esp_idf_svc::sys::{esp, esp_task_wdt_add, esp_task_wdt_reset, esp_timer_get_time, vTaskDelay, xTaskGetCurrentTaskHandle};
 use esp_idf_svc::systime::EspSystemTime;
 use std::collections::VecDeque;
@@ -77,7 +77,7 @@ pub struct AxisPins {
   pub step_pin: PinDriver<'static, AnyOutputPin, Output>,
   pub dir_pin: PinDriver<'static, AnyOutputPin, Output>,
   pub enable_pin: PinDriver<'static, AnyOutputPin, Output>,
-  pub home_pin: PinDriver<'static, AnyInputPin, Input>, // Homing limit switch
+  pub home_pin: PinDriver<'static, AnyIOPin, Input>, // Homing limit switch
 }
 
 pub struct Axis {
@@ -89,7 +89,7 @@ pub struct Axis {
   step_pin: PinDriver<'static, AnyOutputPin, Output>,
   dir_pin: PinDriver<'static, AnyOutputPin, Output>,
   enable_pin: PinDriver<'static, AnyOutputPin, Output>,
-  home_pin: PinDriver<'static, AnyInputPin, Input>,
+  home_pin: PinDriver<'static, AnyIOPin, Input>,
   homing_direction: i32, // Used during homing
 }
 
@@ -630,16 +630,16 @@ fn execute_pulse(
     // Normal movement with acceleration/deceleration
     // Update speed based on distance to target
     let distance = (axis.position - axis.target).abs();
-    let decel_distance = axis.speed;
+    let decel_distance = axis.speed/5;
 
     if distance > decel_distance {
       if axis.speed < axis.desired_speed {
-        axis.speed += 1;
+        axis.speed += 5;
       }
     } else {
       let target_speed = distance.max(MIN_SPEED);
       if axis.speed > target_speed {
-        axis.speed -= 1;
+        axis.speed -= 5;
       }
     }
 
