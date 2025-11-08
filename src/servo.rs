@@ -91,6 +91,7 @@ pub struct Axis {
   enable_pin: PinDriver<'static, AnyOutputPin, Output>,
   home_pin: PinDriver<'static, AnyIOPin, Input>,
   homing_direction: i32, // Used during homing
+  is_enabled: bool,
 }
 
 impl Axis {
@@ -109,6 +110,7 @@ impl Axis {
       enable_pin: pins.enable_pin,
       home_pin: pins.home_pin,
       homing_direction: 0,
+      is_enabled: false,
     }
   }
 
@@ -121,14 +123,21 @@ impl Axis {
     }
   }
 
-  fn set_enable(&mut self, enabled: bool) {
-    if enabled {
-      let _ = self.enable_pin.set_low();
-    } else {
-      let _ = self.enable_pin.set_high();
+
+  // return true when changed
+  fn set_enable(&mut self, enabled: bool) -> bool{
+    if enabled != self.is_enabled{
+      if enabled {
+        let _ = self.enable_pin.set_low();
+      } else {
+        let _ = self.enable_pin.set_high();
+      }
+      self.is_enabled = enabled;
+      // Small delay for motor driver to respond
+      //delay_us(200);
+      return true;
     }
-    // Small delay for motor driver to respond
-    delay_us(200);
+    false
   }
 
   // Check if home switch is pressed (active LOW with internal pullup)
@@ -260,6 +269,7 @@ pub fn axis_thread(
           println!(">>> Received command: {:?}", axis_cmd);
 
           if let Command::Sync {id} = &axis_cmd.command {
+            println!("adding sync id: {} to both buffers", sync_id);
 
             axis_state0.command_buffer.push_back(Command::Sync {id: Some(sync_id) });
             axis_state1.command_buffer.push_back(Command::Sync {id: Some(sync_id) });
@@ -334,7 +344,7 @@ pub fn axis_thread(
     }
 
     // Process both axes and get time until next pulse
-    let time_to_next_pulse_0 = process_axis_commands(
+    let next_pulse_time_0 = process_axis_commands(
       &mut axis0,
       &mut axis_state0,
       &mut active_axis,
@@ -342,7 +352,7 @@ pub fn axis_thread(
       sync_state.clone(),
     );
 
-    let time_to_next_pulse_1 = process_axis_commands(
+    let next_pulse_time_1 = process_axis_commands(
       &mut axis1,
       &mut axis_state1,
       &mut active_axis,
@@ -350,11 +360,14 @@ pub fn axis_thread(
       sync_state.clone(),
     );
 
+
+    let time_after_compute = now_micros();
+
     // Determine which axis needs to pulse next and sort by time
     let (first_axis, first_time, second_axis, second_time) =
-        match (time_to_next_pulse_0, time_to_next_pulse_1) {
+        match (next_pulse_time_0, next_pulse_time_1) {
           (Some(t0), Some(t1)) => {
-            if t0 <= t1 {
+            if t0 as i64 - time_after_compute as i64 <= t1 as i64 - time_after_compute as i64 {
               (Some(AxisId::AxisX), t0, Some(AxisId::AxisZ), Some(t1))
             } else {
               (Some(AxisId::AxisZ), t1, Some(AxisId::AxisX), Some(t0))
@@ -367,23 +380,40 @@ pub fn axis_thread(
 
     if let Some(first_id) = first_axis {
       // Wait for the first pulse
-      delay_us(first_time);
-      let after_first_wait = now_micros();
+      let time_to_wait = (first_time as i64) - (time_after_compute as i64);
+
+      // // debug only
+      // let (first_axis_state, first_axis_s) = match &first_id {
+      //   AxisId::AxisX => (&axis_state0, &axis0),
+      //   AxisId::AxisZ => (&axis_state1, &axis1)
+      // };
+      // println!("waiting for {time_to_wait} for axis {:?}. last time: {} current_time: {}, speed: {}",
+      //          first_id,
+      //          first_axis_state.last_pulse_time,
+      //          time_after_compute,
+      //          first_axis_s.speed);
+      if time_to_wait > 0 {
+        delay_us(time_to_wait as u64);
+      }
+      let time_after_first_wait = now_micros();
+
 
       // Execute first pulse
       match first_id {
-        AxisId::AxisX => execute_pulse(&mut axis0, &mut axis_state0, after_first_wait),
-        AxisId::AxisZ => execute_pulse(&mut axis1, &mut axis_state1, after_first_wait),
+        AxisId::AxisX => execute_pulse(&mut axis0, &mut axis_state0, time_after_first_wait),
+        AxisId::AxisZ => execute_pulse(&mut axis1, &mut axis_state1, time_after_first_wait),
       }
 
       // Check if we should execute the second pulse
       if let (Some(second_id), Some(second_t)) = (second_axis, second_time) {
-        let remaining_time = second_t - first_time;
+        let remaining_time = second_t as i64 - now_micros() as i64;
 
         // If waiting would cause us to miss the next pulse of the faster axis (1.9x threshold)
-        if remaining_time <= (first_time as f32 * 1.9) as u64 {
+        if remaining_time <= ((time_after_compute - current_time) + 20) as i64 {
           // Wait and execute the second pulse
-          delay_us(remaining_time);
+          if (remaining_time > 0) {
+            delay_us(remaining_time as u64);
+          }
           let after_second_wait = now_micros();
 
           match second_id {
@@ -462,7 +492,6 @@ fn process_axis_commands(
           axis.desired_speed = *speed;
           axis.speed = MIN_SPEED; // Start slow
           axis.homing_direction = *direction;
-          axis.set_enable(true);
 
           // Set direction pin
           if *direction > 0 {
@@ -470,6 +499,10 @@ fn process_axis_commands(
           } else {
             let _ = axis.dir_pin.set_low();
           }
+
+          axis.set_enable(true);
+          // to force wait after enable/dir change.
+          axis_state.last_pulse_time = now_micros();
         }
 
         // Check if home switch is pressed
@@ -533,18 +566,22 @@ fn process_axis_commands(
         axis.desired_speed = *speed;
 
         if axis.position != *position {
-          // Enable axis if not already enabled
-          axis.set_enable(true);
-
           // Set direction
           if axis.position < axis.target {
             let _ = axis.dir_pin.set_high();
           } else {
             let _ = axis.dir_pin.set_low();
           }
+          // enable if needed (this includes a wait)
+          let changed =  axis.set_enable(true);
+          let changed_time = match changed {true => {200} _ => 0};
+          if changed {
+            // we set the last pulse time to now, to force the wait.
+            axis_state.last_pulse_time = now_micros();
+          }
 
           // Calculate timing for next pulse
-          return Some(calculate_time_to_next_pulse(axis, axis_state, current_time));
+          return Some(calculate_time_to_next_pulse(axis, axis_state, current_time) + changed_time);
         } else {
           // Movement complete
           println!("[{:?}] === Movement complete at position: {}", axis.id, axis.position);
@@ -568,19 +605,7 @@ fn calculate_time_to_next_pulse(
   // Calculate step delay based on current speed
   let step_delay_us = 1_000_000 / axis.speed.max(10) as u64;
 
-  // Calculate time elapsed since last pulse
-  let time_since_last_pulse = if axis_state.last_pulse_time > 0 {
-    current_time.saturating_sub(axis_state.last_pulse_time)
-  } else {
-    step_delay_us // First pulse, return full delay
-  };
-
-  // Return remaining time until next pulse
-  if time_since_last_pulse >= step_delay_us {
-    0 // Ready to pulse now
-  } else {
-    step_delay_us - time_since_last_pulse
-  }
+  return step_delay_us + axis_state.last_pulse_time;
 }
 
 // Calculate time until next pulse during homing (simpler logic)
@@ -591,18 +616,7 @@ fn calculate_time_to_next_pulse_homing(
 ) -> u64 {
   // Use constant speed during homing
   let step_delay_us = 1_000_000 / axis.desired_speed.max(10) as u64;
-
-  let time_since_last_pulse = if axis_state.last_pulse_time > 0 {
-    current_time.saturating_sub(axis_state.last_pulse_time)
-  } else {
-    step_delay_us
-  };
-
-  if time_since_last_pulse >= step_delay_us {
-    0
-  } else {
-    step_delay_us - time_since_last_pulse
-  }
+  return step_delay_us + axis_state.last_pulse_time;
 }
 
 // Execute a step pulse on the axis

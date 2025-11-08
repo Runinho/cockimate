@@ -424,7 +424,11 @@ fn main() -> anyhow::Result<()> {
       Ok(script) => {
         let command_count = script.commands.len();
 
-        for axis_cmd in script.commands {
+        for mut axis_cmd in script.commands {
+          if matches!(axis_cmd.command, Command::Sync {id:_}) && axis_cmd.axis.is_none(){
+            // send only to axis X. --> is applied to both then.
+            axis_cmd.axis = Some(AxisId::AxisX);
+          }
           send_command(&cmd_tx_script, axis_cmd.axis, axis_cmd.command);
         }
 
